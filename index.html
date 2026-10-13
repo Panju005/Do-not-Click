@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DO NOT PRESS</title>
+<style>
+  /* ---------- Layout ---------- */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #101418;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    transition: background 0.6s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+
+  /* Alarm flash overlay (only active at high escalation) */
+  #alarm {
+    position: fixed; inset: 0;
+    background: radial-gradient(circle, transparent 40%, rgba(255,0,0,0.55) 100%);
+    opacity: 0; pointer-events: none;
+    z-index: 5;
+  }
+  #alarm.on { animation: alarmflash 0.7s infinite; }
+  @keyframes alarmflash { 0%,100% { opacity: 0; } 50% { opacity: 1; } }
+
+  h1 {
+    font-size: clamp(20px, 4vw, 34px);
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+    z-index: 10;
+  }
+  #counter {
+    font-size: 14px;
+    letter-spacing: 2px;
+    opacity: 0.7;
+    margin-bottom: 36px;
+    z-index: 10;
+  }
+  #threat {
+    font-size: clamp(18px, 3.4vw, 30px);
+    font-weight: 700;
+    color: #ffb3b3;
+    min-height: 44px;
+    max-width: 86vw;
+    margin-bottom: 44px;
+    z-index: 10;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+  }
+
+  /* ---------- The Button ---------- */
+  #btnWrap { z-index: 10; }
+  #theButton {
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    background: radial-gradient(circle at 35% 30%, #ff8a8a, #e02020 45%, #8f0f0f 100%);
+    box-shadow: 0 12px 0 #5c0909, 0 22px 34px rgba(0,0,0,0.55), inset 0 -10px 22px rgba(0,0,0,0.35);
+    color: #fff;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    line-height: 1.15;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    transition: width 0.35s cubic-bezier(.34,1.8,.5,1),
+                height 0.35s cubic-bezier(.34,1.8,.5,1),
+                font-size 0.35s ease,
+                box-shadow 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #theButton:active {
+    box-shadow: 0 4px 0 #5c0909, 0 10px 18px rgba(0,0,0,0.5), inset 0 -6px 16px rgba(0,0,0,0.35);
+  }
+  #theButton.pulse { animation: pulse 0.9s infinite; }
+  @keyframes pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.35); }
+  }
+
+  /* Screen shake */
+  .shake { animation: shake 0.4s; }
+  @keyframes shake {
+    0%,100% { transform: translate(0,0); }
+    20% { transform: translate(-9px, 5px); }
+    40% { transform: translate(8px, -6px); }
+    60% { transform: translate(-7px, -4px); }
+    80% { transform: translate(6px, 5px); }
+  }
+
+  /* ---------- End state ---------- */
+  #endScreen {
+    position: fixed; inset: 0;
+    background: #200505;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 24px;
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(1.08);
+    transition: opacity 0.5s ease, transform 0.5s ease, visibility 0.5s;
+    pointer-events: none;
+  }
+  #endScreen.show {
+    opacity: 1;
+    visibility: visible;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  #endScreen h2 { font-size: clamp(30px, 7vw, 64px); color: #ff4d4d; letter-spacing: 2px; margin-bottom: 14px; }
+  #endScreen p { font-size: clamp(16px, 2.6vw, 22px); opacity: 0.9; margin-bottom: 34px; max-width: 640px; }
+  #resetBtn {
+    background: transparent;
+    color: #ffb3b3;
+    border: 2px solid #ffb3b3;
+    padding: 12px 28px;
+    font-size: 16px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #resetBtn:hover { background: #ffb3b3; color: #200505; }
+
+  #hint { position: fixed; bottom: 14px; font-size: 12px; opacity: 0.45; z-index: 10; letter-spacing: 1px; }
+
+  /* ---------- Smooth animation extras ---------- */
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  h1, #counter, #threat, #btnWrap { animation: riseIn 0.6s ease both; }
+  #counter { animation-delay: 0.08s; }
+  #threat  { animation-delay: 0.16s; }
+  #btnWrap { animation-delay: 0.24s; }
+
+  @keyframes threatIn {
+    0%   { opacity: 0; transform: translateY(10px) scale(0.96); filter: blur(2px); }
+    100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  }
+  #threat.swap { animation: threatIn 0.32s ease both; }
+
+  @keyframes popNum {
+    0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); }
+  }
+  #counter.pop { animation: popNum 0.25s ease; display: inline-block; }
+
+  @keyframes squash {
+    0%   { transform: scale(1, 1); }
+    30%  { transform: scale(1.10, 0.87); }
+    55%  { transform: scale(0.95, 1.07); }
+    75%  { transform: scale(1.03, 0.98); }
+    100% { transform: scale(1, 1); }
+  }
+  #theButton.squash { animation: squash 0.38s ease; }
+
+  /* ---------- Cracks with light leaking out ---------- */
+  #theButton { position: relative; }
+  #cracks {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    clip-path: circle(50% at 50% 50%);
+    --crack: #ffd23f;
+  }
+  #cracks g {
+    opacity: 0;
+    transform: scale(0.65);
+    transform-origin: 50% 46%;
+    transition: opacity 0.45s ease, transform 0.45s ease;
+  }
+  #cracks g.on { opacity: 1; transform: scale(1); }
+  #cracks { shape-rendering: geometricPrecision; }
+  #cracks path.fissure {
+    fill: rgba(14, 3, 3, 0.92);
+    stroke: rgba(0, 0, 0, 0.4);
+    stroke-width: 0.7;
+  }
+  #cracks path.leak {
+    fill: none;
+    stroke: var(--crack);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px var(--crack)) drop-shadow(0 0 9px var(--crack));
+    transition: stroke 0.5s ease;
+  }
+  #cracks path.core {
+    fill: none;
+    stroke: #fff7dd;
+    stroke-width: 1.05;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 2px var(--crack));
+    transition: stroke 0.5s ease;
+  }
+  #cracks path.hot {
+    fill: none;
+    stroke: #ffe9a3;
+    stroke-width: 3.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.85;
+    filter: drop-shadow(0 0 5px var(--crack));
+    transition: stroke 0.5s ease;
+  }
+  @keyframes crackThrob { 0%,100% { opacity: 0.75; } 50% { opacity: 1; } }
+
+  @keyframes lavaFlicker {
+    0%, 100% { filter: brightness(1); }
+    18% { filter: brightness(1.16); }
+    37% { filter: brightness(0.95); }
+    55% { filter: brightness(1.24); }
+    74% { filter: brightness(1.04); }
+    88% { filter: brightness(1.13); }
+  }
+  #cracks.lit   { animation: lavaFlicker 2.6s linear infinite; }
+  #cracks.throb { animation: crackThrob 0.8s infinite, lavaFlicker 2.6s linear infinite; }
+
+  #ambientGlow { transition: opacity 0.6s ease; }
+
+  /* Blast pieces */
+  #blastFlash {
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 50% 55%, #fff8e0 0%, #ffb03a 35%, rgba(255,80,20,0.55) 60%, transparent 78%);
+    opacity: 0; pointer-events: none; z-index: 40;
+  }
+  .particle {
+    position: fixed;
+    border-radius: 2px;
+    pointer-events: none;
+    z-index: 45;
+  }
+  .shockwave {
+    position: fixed;
+    border: 5px solid rgba(255,170,60,0.9);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 44;
+    transform: translate(-50%, -50%);
+  }
+  @keyframes bigshake {
+    0%,100% { transform: translate(0,0); }
+    10% { transform: translate(-22px, 12px) rotate(-0.6deg); }
+    25% { transform: translate(19px, -14px) rotate(0.5deg); }
+    40% { transform: translate(-16px, -9px); }
+    55% { transform: translate(13px, 11px); }
+    70% { transform: translate(-9px, 6px); }
+    85% { transform: translate(6px, -4px); }
+  }
+  .bigshake { animation: bigshake 0.7s ease; }
+
+  /* Sound toggle */
+  #soundBtn {
+    position: fixed; top: 14px; right: 14px;
+    z-index: 60;
+    background: rgba(255,255,255,0.08);
+    color: #eee;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+  }
+  #soundBtn:hover { background: rgba(255,255,255,0.16); }
+</style>
+</head>
+<body>
+
+  <div id="alarm"></div>
+  <button id="soundBtn" title="Toggle sound">🔊 Sound: ON</button>
+
+  <h1>⚠ DO NOT PRESS ⚠</h1>
+  <div id="counter">PRESSES: 0</div>
+  <div id="threat">This button is here for decorative purposes only.</div>
+
+  <div id="btnWrap">
+    <button id="theButton">DO NOT<br>PRESS
+      <svg id="cracks" viewBox="0 0 400 400" aria-hidden="true">
+        <defs>
+          <radialGradient id="lavaGrad" cx="50%" cy="46%" r="50%">
+            <stop offset="0%"  stop-color="#fff3b0" stop-opacity="0.95"/>
+            <stop id="lavaMid" offset="38%" stop-color="#ffd23f" stop-opacity="0.55"/>
+            <stop offset="100%" stop-color="#ffd23f" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <circle id="ambientGlow" cx="200" cy="184" r="168" fill="url(#lavaGrad)" opacity="0"/>
+        <g id="cg1"></g>
+        <g id="cg2"></g>
+        <g id="cg3"></g>
+      </svg>
+    </button>
+  </div>
+
+  <div id="blastFlash"></div>
+
+  <div id="endScreen">
+    <h2>💥 IT BLASTED 💥</h2>
+    <p id="endText"></p>
+    <button id="resetBtn">Fine. Reset the universe</button>
+  </div>
+
+  <div id="hint">Workshop build: "Do Not Press" Button Escalator — FOSS Club VJCET</div>
+
+<script>
+  const THREATS = [
+    "This button is here for decorative purposes only.",
+    "Hey. It literally says DO NOT PRESS.",
+    "Okay... that was an accident, right?",
+    "Twice is not an accident.",
+    "Stop. This is your first warning.",
+    "Second warning. The button has feelings too.",
+    "Do you feel it growing? That's not a good sign.",
+    "Third warning. Security has been notified.",
+    "Security is also pressing it now. Great job.",
+    "This interaction is being recorded for quality purposes.",
+    "Your warranty is now officially void.",
+    "The button is angry. Genuinely angry.",
+    "DEFCON 3. Missiles are... probably fine.",
+    "LAST CHANCE. Put the mouse down and walk away.",
+    "You have doomed us all. Hope it was worth it.",
+    "There is no stage after this one. Probably.",
+  ];
+  const FINAL_AT = THREATS.length;
+
+  const btn     = document.getElementById("theButton");
+  const threat  = document.getElementById("threat");
+  const counter = document.getElementById("counter");
+  const alarm   = document.getElementById("alarm");
+  const wrap    = document.getElementById("btnWrap");
+  const endScr  = document.getElementById("endScreen");
+  const endText = document.getElementById("endText");
+  const cracksEl = document.getElementById("cracks");
+  const cg1 = document.getElementById("cg1");
+  const cg2 = document.getElementById("cg2");
+  const cg3 = document.getElementById("cg3");
+  const flash = document.getElementById("blastFlash");
+
+  const CRACK_WAVES = [
+    { g: () => cg1, spines: [
+      { pts: [[200,184],[178,150],[186,116],[168,74],[176,40]], w: 7.5, core: true },
+      { pts: [[200,184],[232,162],[230,128],[244,100]],         w: 6.5, core: true },
+      { pts: [[200,184],[164,196],[132,190],[104,204]],         w: 6.5, core: true },
+      { pts: [[186,116],[163,103],[149,111]],                   w: 3 },
+      { pts: [[230,128],[252,124],[264,132]],                   w: 2.6 },
+    ]},
+    { g: () => cg2, spines: [
+      { pts: [[200,184],[224,214],[216,246],[230,278]],         w: 7, core: true },
+      { pts: [[200,184],[158,168],[120,176],[84,158]],          w: 6.5, core: true },
+      { pts: [[176,40],[192,21],[185,2]],                       w: 3.5 },
+      { pts: [[230,128],[256,117],[279,128]],                   w: 3 },
+      { pts: [[132,190],[109,214],[117,241]],                   w: 3 },
+      { pts: [[178,150],[152,138],[138,146]],                   w: 2.6 },
+    ]},
+    { g: () => cg3, spines: [
+      { pts: [[200,184],[258,206],[296,198],[336,212]],         w: 6.5, core: true },
+      { pts: [[200,184],[176,238],[184,282],[168,330]],         w: 6.5, core: true },
+      { pts: [[164,196],[139,225],[147,259]],                   w: 3.5 },
+      { pts: [[230,128],[259,95],[287,91]],                     w: 3.5 },
+      { pts: [[216,246],[245,268],[240,297]],                   w: 3 },
+      { pts: [[186,116],[215,91],[212,58]],                     w: 3 },
+      { pts: [[120,176],[96,196],[100,222]],                    w: 2.8 },
+      { pts: [[258,206],[282,232],[276,258]],                   w: 2.8 },
+    ], chips: [
+      "M186,168 L196,160 L194,174 Z",
+      "M216,192 L228,198 L216,204 Z",
+      "M192,204 L202,212 L188,214 Z",
+    ]},
+  ];
+
+  function buildCracks() {
+    const NS = "http://www.w3.org/2000/svg";
+    const mk = (d, cls) => {
+      const p = document.createElementNS(NS, "path");
+      p.setAttribute("d", d);
+      p.setAttribute("class", cls);
+      return p;
+    };
+    function fissureD(pts, maxW) {
+      const L = [], R = [];
+      for (let i = 0; i < pts.length; i++) {
+        const t = i / (pts.length - 1);
+        const w = Math.max(0.25, maxW * Math.pow(1 - t, 0.72)) / 2;
+        const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(pts.length - 1, i + 1)];
+        let dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+        const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+        L.push((pts[i][0] - dy * w).toFixed(1) + "," + (pts[i][1] + dx * w).toFixed(1));
+        R.push((pts[i][0] + dy * w).toFixed(1) + "," + (pts[i][1] - dx * w).toFixed(1));
+      }
+      return "M" + L.join(" L") + " L" + R.reverse().join(" L") + " Z";
+    }
+    const lineD = pts => "M" + pts.map(p => p[0] + "," + p[1]).join(" L");
+
+    CRACK_WAVES.forEach(wave => {
+      const g = wave.g();
+      wave.spines.forEach(s => {
+        g.appendChild(mk(fissureD(s.pts, s.w), "fissure"));
+        g.appendChild(mk(lineD(s.pts), "leak"));
+        if (s.core) {
+          g.appendChild(mk(lineD(s.pts), "core"));
+          g.appendChild(mk(lineD([s.pts[0], s.pts[1]]), "hot"));
+        }
+      });
+      (wave.chips || []).forEach(d => g.appendChild(mk(d, "fissure")));
+    });
+  }
+  buildCracks();
+
+  const ambientGlow = document.getElementById("ambientGlow");
+  const lavaMid = document.getElementById("lavaMid");
+  function crackStage(n) {
+    let color = null, vein = null, blur = 0, amb = 0;
+    if (n >= 12)      { color = "#ff2d16"; vein = "#ff4218"; blur = 95; amb = 1;    cg1.classList.add("on"); cg2.classList.add("on"); cg3.classList.add("on"); cracksEl.classList.add("throb"); }
+    else if (n >= 9)  { color = "#ff8c1a"; vein = "#ff9416"; blur = 60; amb = 0.75; cg1.classList.add("on"); cg2.classList.add("on"); }
+    else if (n >= 6)  { color = "#ffd23f"; vein = "#ffc233"; blur = 34; amb = 0.5;  cg1.classList.add("on"); }
+    if (color) {
+      cracksEl.style.setProperty("--crack", color);
+      cracksEl.style.setProperty("--vein", vein);
+      cracksEl.classList.add("lit");
+      lavaMid.setAttribute("stop-color", color);
+      ambientGlow.style.opacity = amb;
+      btn.style.boxShadow =
+        `0 12px 0 #5c0909, 0 22px 34px rgba(0,0,0,0.55), inset 0 -10px 22px rgba(0,0,0,0.35), 0 0 ${blur}px ${color}`;
+    }
+  }
+
+  function blast() {
+    const r = btn.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+
+    boom();
+
+    flash.animate(
+      [{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 0 }],
+      { duration: 750, easing: "ease-out" }
+    );
+
+    const ring = document.createElement("div");
+    ring.className = "shockwave";
+    ring.style.left = cx + "px"; ring.style.top = cy + "px";
+    ring.style.width = "30px"; ring.style.height = "30px";
+    document.body.appendChild(ring);
+    ring.animate(
+      [{ transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+       { transform: `translate(-50%,-50%) scale(${Math.max(innerWidth, innerHeight) / 22})`, opacity: 0 }],
+      { duration: 800, easing: "cubic-bezier(.1,.7,.3,1)" }
+    ).onfinish = () => ring.remove();
+
+    const colors = ["#ffd23f", "#ff8c1a", "#ff3b1a", "#fff3d6", "#e02020"];
+    for (let i = 0; i < 46; i++) {
+      const p = document.createElement("div");
+      p.className = "particle";
+      const size = 4 + Math.random() * 11;
+      p.style.width = size + "px";
+      p.style.height = size * (0.5 + Math.random()) + "px";
+      p.style.left = cx + "px"; p.style.top = cy + "px";
+      p.style.background = colors[i % colors.length];
+      p.style.boxShadow = `0 0 ${6 + Math.random() * 10}px ${colors[i % colors.length]}`;
+      document.body.appendChild(p);
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 130 + Math.random() * Math.max(innerWidth, innerHeight) * 0.55;
+      const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - 60;
+      p.animate(
+        [{ transform: "translate(-50%,-50%) rotate(0deg)", opacity: 1 },
+         { transform: `translate(calc(-50% + ${dx * 0.8}px), calc(-50% + ${dy}px)) rotate(${Math.random() * 420 - 210}deg)`, opacity: 1, offset: 0.7 },
+         { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy + 190}px)) rotate(${Math.random() * 640 - 320}deg)`, opacity: 0 }],
+        { duration: 950 + Math.random() * 650, easing: "cubic-bezier(.15,.6,.4,1)" }
+      ).onfinish = () => p.remove();
+    }
+
+    btn.animate(
+      [{ transform: "scale(1)", opacity: 1 },
+       { transform: "scale(1.25)", opacity: 1, offset: 0.25 },
+       { transform: "scale(2.1)", opacity: 0 }],
+      { duration: 420, easing: "ease-in", fill: "forwards" }
+    );
+
+    document.body.classList.remove("bigshake");
+    void document.body.offsetWidth;
+    document.body.classList.add("bigshake");
+  }
+
+  let presses = 0;
+
+  const BASE_SIZE = 180;
+  const BASE_FONT = 26;
+  function sizeFor(n) { return BASE_SIZE * (1 + n * 0.10); }
+  function fontFor(n) { return BASE_FONT * (1 + n * 0.10); }
+
+  function bgFor(n) {
+    const redness = Math.min(120, n * 9);
+    return `rgb(${16 + redness}, ${20 - Math.min(12, n)}, ${24 - Math.min(14, n)})`;
+  }
+
+  // ---------- Sounds ----------
+  let audioCtx = null;
+  let master = null;
+  let soundOn = true;
+
+  function ac() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      master = audioCtx.createGain();
+      master.gain.value = 0.9;
+      master.connect(audioCtx.destination);
+    }
+    if (audioCtx.state !== "running") audioCtx.resume();
+    return audioCtx;
+  }
+  window.addEventListener("pointerdown", () => { if (soundOn) ac(); }, { once: true });
+
+  function beep(n) {
+    if (!soundOn) return;
+    try {
+      const ctx = ac(), t = ctx.currentTime;
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = 320 + n * 40;
+      gain.gain.setValueAtTime(0.10, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(gain).connect(master);
+      osc.start(); osc.stop(t + 0.18);
+    } catch (e) {}
+  }
+
+  function creak(n) {
+    if (!soundOn) return;
+    try {
+      const ctx = ac(), t = ctx.currentTime;
+      const dur = 0.35 + Math.min(0.45, n * 0.03);
+      const vol = 0.09 + Math.min(0.14, n * 0.010);
+      [0, 9].forEach(detune => {
+        const osc = ctx.createOscillator(), gain = ctx.createGain();
+        const wob = ctx.createOscillator(), wobGain = ctx.createGain();
+        osc.type = "sawtooth";
+        const startF = 210 + n * 6 + detune;
+        osc.frequency.setValueAtTime(startF, t);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(95, startF * 0.48), t + dur);
+        wob.frequency.value = 9 + Math.random() * 6;
+        wobGain.gain.value = 22;
+        wob.connect(wobGain).connect(osc.frequency);
+        const lp = ctx.createBiquadFilter();
+        lp.type = "lowpass"; lp.frequency.value = 950;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(vol, t + 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        osc.connect(lp).connect(gain).connect(master);
+        osc.start(t); osc.stop(t + dur + 0.05);
+        wob.start(t); wob.stop(t + dur + 0.05);
+      });
+    } catch (e) {}
+  }
+
+  function thud() {
+    if (!soundOn) return;
+    try {
+      const ctx = ac(), t = ctx.currentTime;
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(96, t);
+      osc.frequency.exponentialRampToValueAtTime(48, t + 0.16);
+      gain.gain.setValueAtTime(0.30, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      osc.connect(gain).connect(master);
+      osc.start(t); osc.stop(t + 0.25);
+    } catch (e) {}
+  }
+
+  let noiseBuf = null;
+  function crackle(n) {
+    if (!soundOn) return;
+    try {
+      const ctx = ac(), t = ctx.currentTime;
+      if (!noiseBuf) {
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      const bursts = 2 + Math.floor(n / 4);
+      for (let i = 0; i < bursts; i++) {
+        const src = ctx.createBufferSource();
+        src.buffer = noiseBuf;
+        src.playbackRate.value = 0.7 + Math.random() * 0.9;
+        const bp = ctx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = 900 + Math.random() * 1600;
+        bp.Q.value = 1.1;
+        const g = ctx.createGain();
+        const at = t + i * (0.05 + Math.random() * 0.07);
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.16 + Math.min(0.14, n * 0.01), at + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.001, at + 0.09);
+        src.connect(bp).connect(g).connect(master);
+        src.start(at, Math.random() * 0.3, 0.12);
+      }
+    } catch (e) {}
+  }
+
+  function boom() {
+    if (!soundOn) return;
+    try {
+      const ctx = ac(), t = ctx.currentTime;
+      if (!noiseBuf) {
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuf; src.loop = true;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(3200, t);
+      lp.frequency.exponentialRampToValueAtTime(90, t + 0.85);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.55, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+      src.connect(lp).connect(g).connect(master);
+      src.start(t); src.stop(t + 0.95);
+      const osc = ctx.createOscillator(), og = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(170, t);
+      osc.frequency.exponentialRampToValueAtTime(38, t + 0.7);
+      og.gain.setValueAtTime(0.5, t);
+      og.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+      osc.connect(og).connect(master);
+      osc.start(t); osc.stop(t + 0.8);
+    } catch (e) {}
+  }
+
+  let heartbeatTimer = null;
+  function startHeartbeat() {
+    if (heartbeatTimer) return;
+    const beat = () => { thud(); setTimeout(thud, 240); };
+    beat();
+    heartbeatTimer = setInterval(beat, 950);
+  }
+  function stopHeartbeat() {
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  }
+
+  function replay(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  btn.addEventListener("click", () => {
+    if (presses >= FINAL_AT) return;
+    presses++;
+    counter.textContent = "PRESSES: " + presses;
+    replay(counter, "pop");
+    replay(btn, "squash");
+    beep(presses);
+    creak(presses);
+
+    if (presses >= FINAL_AT) {
+      endText.textContent =
+        `It cracked. It glowed. And on press number ${presses}, it blasted. ` +
+        `The button warned you ${FINAL_AT - 1} times. This is on you.`;
+      stopHeartbeat();
+      blast();
+      setTimeout(() => endScr.classList.add("show"), 1050);
+      return;
+    }
+
+    threat.textContent = THREATS[presses];
+    replay(threat, "swap");
+
+    const s = sizeFor(presses);
+    btn.style.width = s + "px";
+    btn.style.height = s + "px";
+    btn.style.fontSize = fontFor(presses) + "px";
+
+    document.body.style.background = bgFor(presses);
+
+    crackStage(presses);
+    if (presses >= 6) crackle(presses);
+
+    if (presses >= 5) btn.classList.add("pulse");
+
+    if (presses >= 9) {
+      wrap.classList.remove("shake");
+      void wrap.offsetWidth;
+      wrap.classList.add("shake");
+    }
+
+    if (presses >= 10) startHeartbeat();
+
+    if (presses >= 12) alarm.classList.add("on");
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    presses = 0;
+    counter.textContent = "PRESSES: 0";
+    threat.textContent = THREATS[0];
+    btn.style.width = BASE_SIZE + "px";
+    btn.style.height = BASE_SIZE + "px";
+    btn.style.fontSize = BASE_FONT + "px";
+    btn.style.boxShadow = "";
+    btn.getAnimations().forEach(a => a.cancel());
+    btn.style.opacity = "1";
+    btn.classList.remove("pulse");
+    cg1.classList.remove("on"); cg2.classList.remove("on"); cg3.classList.remove("on");
+    cracksEl.classList.remove("throb");
+    cracksEl.classList.remove("lit");
+    cracksEl.style.setProperty("--crack", "#ffd23f");
+    cracksEl.style.setProperty("--vein", "#ffc233");
+    lavaMid.setAttribute("stop-color", "#ffd23f");
+    ambientGlow.style.opacity = "0";
+    alarm.classList.remove("on");
+    stopHeartbeat();
+    document.body.style.background = "#101418";
+    endScr.classList.remove("show");
+  });
+
+  const soundBtn = document.getElementById("soundBtn");
+  soundBtn.addEventListener("click", () => {
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? "🔊 Sound: ON" : "🔇 Sound: OFF";
+    if (soundOn) { ac(); beep(3); creak(6); }
+    else stopHeartbeat();
+  });
+</script>
+</body>
+</html>
